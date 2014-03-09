@@ -21,6 +21,9 @@ import zipfile
 import tarfile
 import hashlib
 import sys
+import os.path
+import os
+import itertools
 
 def _main():
     parser = argparse.ArgumentParser(description="Compare zip or tar file contents")
@@ -30,7 +33,33 @@ def _main():
     contents = [dict(), dict()]
 
     for i, path in enumerate(options.file):
-        if path.endswith('.zip'): # zip mode
+        if os.path.isdir(path):
+            for root, dirs, files in os.walk(path):
+                for onefile in itertools.chain(files, dirs):
+                    fullpath = os.path.join(root, onefile)
+                    fname = os.path.relpath(fullpath, path)
+                    stat = os.lstat(fullpath)
+                    contents[i][fname] = {
+                        'linkname': '',
+                        'name': fname,
+                        'size': stat.st_size,
+                        'mode': stat.st_mode & 0777
+                    }
+
+                    if os.path.islink(fullpath):
+                        contents[i][fname]['type'] = tarfile.SYMTYPE
+                        contents[i][fname]['size'] = 0
+                        contents[i][fname]['linkname'] = os.readlink(fullpath)
+                    elif os.path.isdir(fullpath):
+                        contents[i][fname]['type'] = tarfile.DIRTYPE
+                        contents[i][fname]['size'] = 0
+                    else:
+                        contents[i][fname]['type'] = tarfile.REGTYPE
+                        with open(fullpath) as f:
+                            h = hashlib.new('sha1')
+                            h.update(f.read())
+                            contents[i][fname]['content'] = h.hexdigest()
+        elif path.endswith('.zip'): # zip mode
             pass
         else: # tar mode
             t = tarfile.open(path)
